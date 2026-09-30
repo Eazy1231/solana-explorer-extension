@@ -1,6 +1,28 @@
-import { classifySolanaIdentifier } from "../src/security/solana.js";
 
-const HOSTS = new Map([
+function decodeBase58(value) {
+  const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  const values = new Map([...alphabet].map((char, index) => [char, index]));
+  if (!value || [...value].some((char) => !values.has(char))) return null;
+  const bytes = [0];
+  for (const char of value) {
+    let carry = values.get(char);
+    for (let i = 0; i < bytes.length; i += 1) {
+      const next = bytes[i] * 58 + carry;
+      bytes[i] = next & 0xff;
+      carry = next >> 8;
+    }
+    while (carry > 0) { bytes.push(carry & 0xff); carry >>= 8; }
+  }
+  for (const char of value) { if (char !== "1") break; bytes.push(0); }
+  bytes.reverse();
+  return Uint8Array.from(bytes);
+}
+
+function isValidSolanaIdentifier(value, resourceType) {
+  const decoded = decodeBase58(value);
+  return decoded !== null && decoded.length === (resourceType === "account" ? 32 : 64);
+}
+\nconst HOSTS = new Map([
   ["solscan.io", "solscan"],
   ["www.solscan.io", "solscan"],
   ["solana.fm", "solanafm"],
@@ -48,7 +70,7 @@ function parseNavigation(tabId, rawUrl) {
     resourceId = parts[1];
   }
 
-  if (!resourceType || !resourceId || classifySolanaIdentifier(resourceId) !== resourceType) {
+  if (!resourceType || !resourceId || !isValidSolanaIdentifier(resourceId, resourceType)) {
     return null;
   }
 
