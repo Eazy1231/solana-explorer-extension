@@ -30,3 +30,14 @@ One of the primary challenges in developing the Mini Solana Explorer was making 
 In conclusion, the Mini Solana Explorer has significant potential to demystify blockchain data for the masses. By addressing the challenges and leveraging opportunities for enhancement, the extension can evolve into a comprehensive tool for blockchain enthusiasts and everyday users alike. Continued development, user feedback, and staying abreast of technological advancements will be key to its success and widespread adoption.
 
 NOTE: To test the extension, execute `npm run build` after installing the packages then proceed to load the dist/ folder into the extensions manager with Developer mode enabled. Would be launching on the Chrome webstore soon
+
+## Security boundary
+
+The extension is intentionally read-only. Browser code must not contain provider API keys, OpenAI keys, custody credentials, signing keys, ACH/bank credentials, or payment authorization secrets.
+
+Blockchain and AI requests are sent to the configured backend through `VITE_BACKEND_URL`. The backend is responsible for provider credentials, normalization, authentication, rate limiting, audit logging, and policy enforcement.
+
+Navigation state is scoped by browser tab and restricted to HTTPS Solana explorer URLs. Account and transaction identifiers are validated as 32-byte and 64-byte base58 values respectively.
+
+The extension does not sign or broadcast transactions. Any future payment or treasury operation must remain behind a separately authenticated backend/custody boundary and an authoritative ledger.
+
