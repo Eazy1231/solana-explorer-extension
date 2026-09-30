@@ -1,41 +1,104 @@
-chrome.tabs.onActivated.addListener(async (activeInfo) => {
-  const tab = await chrome.tabs.get(activeInfo.tabId);
-  const url = new URL(tab.url);
+import { classifySolanaIdentifier } from "../src/security/solana.js";
 
-  // Check if the URL matches the Solana Explorer patterns
-  const solscanAccountPattern = /solscan\.io\/account\/(.+)/;
-  const solscanTxPattern = /solscan\.io\/tx\/(.+)/;
-  const solanaFmAccountPattern = /solana\.fm\/address\/(.+)\/transactions/;
-  const solanaFmTxPattern = /solana\.fm\/tx\/(.+)/;
-  const solanaExplorerAccountPattern = /explorer\.solana\.com\/address\/(.+)/;
-  const solanaExplorerTxPattern = /explorer\.solana\.com\/tx\/(.+)/;
+const HOSTS = new Map([
+  ["solscan.io", "solscan"],
+  ["www.solscan.io", "solscan"],
+  ["solana.fm", "solanafm"],
+  ["www.solana.fm", "solanafm"],
+  ["explorer.solana.com", "explorer"],
+]);
 
-  let match =
-    url.href.match(solscanAccountPattern) ||
-    url.href.match(solscanTxPattern) ||
-    url.href.match(solanaFmAccountPattern) ||
-    url.href.match(solanaFmTxPattern) ||
-    url.href.match(solanaExplorerAccountPattern) ||
-    url.href.match(solanaExplorerTxPattern);
+function parseNavigation(tabId, rawUrl) {
+  if (!rawUrl) return null;
 
-  if (match) {
-    const data = {
-      type: match[0],
-      id: match[1],
-    };
-    if (match[0].includes('tx')) {
-      const txHash = match[1];
-      data.txHash = txHash;
-    } else {
-      const accountAddress = match[1];
-      data.accountAddress = accountAddress;
-    }
-
-    // Store the details in local storage
-    await chrome.storage.local.set({ solanaData: data });
-
-    // Notify the popup
-    chrome.action.setBadgeText({ text: '!' });
-    chrome.runtime.sendMessage({ action: 'updateData' });
+  let url;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return null;
   }
+
+  if (url.protocol !== "https:") return null;
+
+  const source = HOSTS.get(url.hostname);
+  if (!source) return null;
+
+  const parts = url.pathname.split("/").filter(Boolean).map((part) => {
+    try {
+      return decodeURIComponent(part);
+    } catch {
+      return part;
+    }
+  });
+
+  let resourceType = null;
+  let resourceId = null;
+
+  if (source === "solanafm" && parts[0] === "address" && parts[2] === "transactions") {
+    resourceType = "account";
+    resourceId = parts[1];
+  } else if (
+    (source === "solscan" || source === "explorer") &&
+    parts[0] === "account" || source === "explorer" && parts[0] === "address"
+  ) {
+    resourceType = "account";
+    resourceId = parts[1];
+  } else if (parts[0] === "tx") {
+    resourceType = "transaction";
+    resourceId = parts[1];
+  }
+
+  if (!resourceType || !resourceId || classifySolanaIdentifier(resourceId) !== resourceType) {
+    return null;
+  }
+
+  return {
+    tabId,
+    source,
+    chain: "solana",
+    network: "mainnet-beta",
+    resourceType,
+    resourceId,
+    observedAt: new Date().toISOString(),
+    sourceUrl: url.href,
+  };
+}
+
+async function captureTab(tabId, rawUrl) {
+  const context = parseNavigation(tabId, rawUrl);
+  const key = `solanaData:${tabId}`;
+
+  if (!context) {
+    await chrome.storage.local.remove(key);
+    return;
+  }
+
+  await chrome.storage.local.set({ [key]: context });
+
+  try {
+    await chrome.runtime.sendMessage({ action: "updateData", context });
+  } catch {
+    // Popup may not currently have a listener.
+  }
+}
+
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    await captureTab(tabId, tab.url);
+  } catch {
+    // Ignore tabs that disappear during activation.
+  }
+});
+
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.url) {
+    await captureTab(tabId, changeInfo.url);
+  } else if (tab.url) {
+    await captureTab(tabId, tab.url);
+  }
+});
+
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  await chrome.storage.local.remove(`solanaData:${tabId}`);
 });
