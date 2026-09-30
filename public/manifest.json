@@ -26,16 +26,15 @@
         "*://solscan.io/*",
         "*://explorer.solana.com/*"
       ],
-      "js": ["content.js"],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_end"
     }
   ],
   "permissions": [
-    "scripting",
     "tabs",
     "activeTab",
-    "contextMenus",
-    "webRequest",
     "storage"
   ],
   "background": {
